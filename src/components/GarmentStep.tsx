@@ -3,12 +3,13 @@ import { Upload, Image as ImageIcon, Maximize2, Target, ChevronRight, RefreshCw,
 import { Stage, Layer, Image as KonvaImage, Transformer, Circle, Line as KonvaLine, Rect } from 'react-konva';
 import useImage from 'use-image';
 import { GoogleGenAI } from "@google/genai";
-import { GarmentImage, MeasurementPoint, Language } from '../types';
+import { GarmentImage, MeasurementPoint, Language, MeasurementSettings } from '../types';
 import { translations } from '../i18n';
 
 interface GarmentStepProps {
-  onComplete: (garment: GarmentImage) => void;
+  onComplete: (garments: GarmentImage[]) => void;
   lang: Language;
+  measurementSettings: MeasurementSettings;
 }
 
 // Internal type for relative points
@@ -19,9 +20,12 @@ interface RelativePoint {
   relY: number; // 0 to 1
 }
 
-export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) => {
+export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, measurementSettings }) => {
   const t = translations[lang].garment;
   
+  const [garments, setGarments] = useState<GarmentImage[]>([]);
+  const [activeGarmentId, setActiveGarmentId] = useState<string | null>(null);
+
   const [garmentUrl, setGarmentUrl] = useState<string | null>(null);
   const [backgroundColor, setBackgroundColor] = useState<string>('#f8fafc'); // Default light slate
   const [isProcessing, setIsProcessing] = useState(false);
@@ -77,9 +81,10 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
         const nextMeasurements = { ...measurements };
         let hasChanged = false;
 
-        ['shoulder', 'chest'].forEach(key => {
-          const id1 = key === 'shoulder' ? 'sh_left' : 'ch_left';
-          const id2 = key === 'shoulder' ? 'sh_right' : 'ch_right';
+        const keysToUpdate = isPants ? ['waist', 'hip'] : ['shoulder', 'chest'];
+        keysToUpdate.forEach(key => {
+          const id1 = (key === 'shoulder' || key === 'waist') ? 'sh_left' : 'ch_left';
+          const id2 = (key === 'shoulder' || key === 'waist') ? 'sh_right' : 'ch_right';
           const dist = getPixelDist(id1, id2);
           if (dist > 0) {
             const newVal = parseFloat((dist / pixelsPerCm).toFixed(1));
@@ -102,7 +107,16 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
   
   const [garmentImg] = useImage(garmentUrl || '');
 
-  const pointConfigs = [
+  const isPants = measurementSettings.method === 'pants';
+
+  const pointConfigs = isPants ? [
+    { id: 'len_top', label: '裤长 (Top)' },
+    { id: 'len_bottom', label: '裤长 (Bottom)' },
+    { id: 'sh_left', label: '腰围 (Left)' },
+    { id: 'sh_right', label: '腰围 (Right)' },
+    { id: 'ch_left', label: '臀围 (Left)' },
+    { id: 'ch_right', label: '臀围 (Right)' },
+  ] : [
     { id: 'len_top', label: t.length + ' (Top)' },
     { id: 'len_bottom', label: t.length + ' (Bottom)' },
     { id: 'sh_left', label: t.shoulder + ' (Left)' },
@@ -112,14 +126,44 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
   ];
 
   const autoDetect = () => {
-    const defaultPoints: RelativePoint[] = [
-      { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.1 },
-      { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 },
-      { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.3, relY: 0.15 },
-      { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.7, relY: 0.15 },
-      { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.25, relY: 0.4 },
-      { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.75, relY: 0.4 },
-    ];
+    let defaultPoints: RelativePoint[] = [];
+    if (measurementSettings.method === 'tshirt') {
+      defaultPoints = [
+        { id: 'len_top', label: t.length + ' (Top)', relX: 0.6, relY: 0.15 }, // 右侧领口肩缝
+        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.6, relY: 0.9 }, // 底部下摆
+        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.2 }, // 左肩袖缝
+        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.2 }, // 右肩袖缝
+        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.45 }, // 左腋下侧缝
+        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.45 }, // 右腋下侧缝
+      ];
+    } else if (measurementSettings.method === 'hoodie') {
+      defaultPoints = [
+        { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.25 }, // 帽根
+        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 }, // 底部下摆
+        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.3 }, // 左肩袖缝
+        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.3 }, // 右肩袖缝
+        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.5 }, // 左腋下侧缝
+        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.5 }, // 右腋下侧缝
+      ];
+    } else if (measurementSettings.method === 'pants') {
+      defaultPoints = [
+        { id: 'len_top', label: '裤长 (Top)', relX: 0.5, relY: 0.1 }, // 腰头
+        { id: 'len_bottom', label: '裤长 (Bottom)', relX: 0.5, relY: 0.95 }, // 裤脚
+        { id: 'sh_left', label: '腰围 (Left)', relX: 0.35, relY: 0.1 }, // 左腰头
+        { id: 'sh_right', label: '腰围 (Right)', relX: 0.65, relY: 0.1 }, // 右腰头
+        { id: 'ch_left', label: '臀围 (Left)', relX: 0.3, relY: 0.3 }, // 左臀围
+        { id: 'ch_right', label: '臀围 (Right)', relX: 0.7, relY: 0.3 }, // 右臀围
+      ];
+    } else {
+      defaultPoints = [
+        { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.1 },
+        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 },
+        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.3, relY: 0.15 },
+        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.7, relY: 0.15 },
+        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.25, relY: 0.4 },
+        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.75, relY: 0.4 },
+      ];
+    }
     setPoints(defaultPoints);
   };
 
@@ -342,44 +386,142 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
     }
   };
 
-  const handleGarmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const stageWidth = 800;
-        const stageHeight = 800;
-        const padding = 10;
-        const maxWidth = stageWidth - padding * 2;
-        const maxHeight = stageHeight - padding * 2;
-        
-        const imgRatio = img.width / img.height;
-        const stageRatio = maxWidth / maxHeight;
-        
-        let targetWidth, targetHeight;
-        
-        if (imgRatio > stageRatio) {
-          // Image is wider than stage ratio
-          targetWidth = maxWidth;
-          targetHeight = targetWidth / imgRatio;
-        } else {
-          // Image is taller than stage ratio
-          targetHeight = maxHeight;
-          targetWidth = targetHeight * imgRatio;
+  const saveCurrentGarment = () => {
+    if (!activeGarmentId || !garmentUrl) return;
+    
+    setGarments(prev => prev.map(g => {
+      if (g.id === activeGarmentId) {
+        // We need to convert relative points to absolute points for storage
+        const absolutePoints: MeasurementPoint[] = points.map(p => ({
+          id: p.id,
+          label: p.label,
+          x: garmentPos.x + p.relX * garmentPos.width,
+          y: garmentPos.y + p.relY * garmentPos.height
+        }));
+
+        let referenceScale = 1;
+        const pTop = points.find(p => p.id === 'len_top');
+        const pBottom = points.find(p => p.id === 'len_bottom');
+        if (pTop && pBottom) {
+          const y1 = garmentPos.y + pTop.relY * garmentPos.height;
+          const y2 = garmentPos.y + pBottom.relY * garmentPos.height;
+          const x1 = garmentPos.x + pTop.relX * garmentPos.width;
+          const x2 = garmentPos.x + pBottom.relX * garmentPos.width;
+          const dist = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+          referenceScale = dist / measurements.length;
         }
 
-        setGarmentUrl(url);
-        setGarmentPos({ 
-          x: (stageWidth - targetWidth) / 2, 
-          y: (stageHeight - targetHeight) / 2, 
-          width: targetWidth, 
-          height: targetHeight 
-        });
-        setTimeout(autoDetect, 500);
-        // removeBackground(url); // Stop automatic background removal
-      };
-      img.src = url;
+        return {
+          ...g,
+          url: garmentUrl,
+          backgroundColor,
+          measurements,
+          points: absolutePoints,
+          referenceScale,
+          // Store internal state as well to restore later
+          _internal: { garmentPos, points }
+        };
+      }
+      return g;
+    }));
+  };
+
+  const loadGarment = (id: string) => {
+    saveCurrentGarment();
+    const g = garments.find(x => x.id === id);
+    if (g) {
+      setActiveGarmentId(id);
+      setGarmentUrl(g.url);
+      setBackgroundColor(g.backgroundColor || '#f8fafc');
+      if ((g as any)._internal) {
+        setGarmentPos((g as any)._internal.garmentPos);
+        setPoints((g as any)._internal.points);
+      }
+      if (g.measurements) {
+        setMeasurements(g.measurements);
+      }
+    }
+  };
+
+  const handleGarmentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      saveCurrentGarment();
+      
+      files.forEach((file, index) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+          const stageWidth = 800;
+          const stageHeight = 800;
+          const padding = 10;
+          const maxWidth = stageWidth - padding * 2;
+          const maxHeight = stageHeight - padding * 2;
+          
+          const imgRatio = img.width / img.height;
+          const stageRatio = maxWidth / maxHeight;
+          
+          let targetWidth, targetHeight;
+          
+          if (imgRatio > stageRatio) {
+            targetWidth = maxWidth;
+            targetHeight = targetWidth / imgRatio;
+          } else {
+            targetHeight = maxHeight;
+            targetWidth = targetHeight * imgRatio;
+          }
+
+          const newGarmentPos = { 
+            x: (stageWidth - targetWidth) / 2, 
+            y: (stageHeight - targetHeight) / 2, 
+            width: targetWidth, 
+            height: targetHeight 
+          };
+
+          const newId = Math.random().toString(36).substr(2, 9);
+          const newName = garments.length === 0 && index === 0 ? '前幅' : `画面 ${garments.length + index + 1}`;
+          
+          let defaultPoints: RelativePoint[];
+          let startingMeasurements = { length: 70, shoulder: 45, chest: 52, sleeve: 60 };
+
+          if (garmentUrl || garments.length > 0) {
+            defaultPoints = JSON.parse(JSON.stringify(points));
+            startingMeasurements = { ...measurements };
+          } else {
+            defaultPoints = [
+              { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.1 },
+              { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 },
+              { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.3, relY: 0.15 },
+              { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.7, relY: 0.15 },
+              { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.25, relY: 0.4 },
+              { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.75, relY: 0.4 },
+            ];
+          }
+
+          const newGarment: GarmentImage = {
+            id: newId,
+            name: newName,
+            url: url,
+            width: 800,
+            height: 800,
+            backgroundColor: '#f8fafc',
+            measurements: startingMeasurements,
+            _internal: { garmentPos: newGarmentPos, points: defaultPoints }
+          } as any;
+
+          setGarments(prev => [...prev, newGarment]);
+          
+          if (index === 0) {
+            setActiveGarmentId(newId);
+            setGarmentUrl(url);
+            setGarmentPos(newGarmentPos);
+            setPoints(defaultPoints);
+            setMeasurements(startingMeasurements);
+            setBackgroundColor('#f8fafc');
+          }
+        };
+        img.src = url;
+      });
     }
   };
 
@@ -467,9 +609,10 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
       const pixelsPerCm = lenDist / newVal;
       const nextMeasurements = { ...measurements, length: newVal };
 
-      ['shoulder', 'chest'].forEach(key => {
-        const id1 = key === 'shoulder' ? 'sh_left' : 'ch_left';
-        const id2 = key === 'shoulder' ? 'sh_right' : 'ch_right';
+      const keysToUpdate = isPants ? ['waist', 'hip'] : ['shoulder', 'chest'];
+      keysToUpdate.forEach(key => {
+        const id1 = (key === 'shoulder' || key === 'waist') ? 'sh_left' : 'ch_left';
+        const id2 = (key === 'shoulder' || key === 'waist') ? 'sh_right' : 'ch_right';
         const dist = getPixelDist(id1, id2);
         if (dist > 0) {
           nextMeasurements[key] = parseFloat((dist / pixelsPerCm).toFixed(1));
@@ -486,8 +629,8 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
       const pixelsPerCm = lenDist / measurements.length;
       const targetPixelDist = newVal * pixelsPerCm;
 
-      const id1 = changedKey === 'shoulder' ? 'sh_left' : 'ch_left';
-      const id2 = changedKey === 'shoulder' ? 'sh_right' : 'ch_right';
+      const id1 = (changedKey === 'shoulder' || changedKey === 'waist') ? 'sh_left' : 'ch_left';
+      const id2 = (changedKey === 'shoulder' || changedKey === 'waist') ? 'sh_right' : 'ch_right';
       const p1 = points.find(p => p.id === id1);
       const p2 = points.find(p => p.id === id2);
 
@@ -510,7 +653,7 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
   };
 
   const handleContinue = () => {
-    if (!stageRef.current) return;
+    if (!stageRef.current || !activeGarmentId) return;
     
     setIsExporting(true);
     
@@ -537,32 +680,34 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
 
     setActivePointId(null);
     
-    // Use a more direct way to capture without background
     const stage = stageRef.current;
     if (!stage) return;
 
-    // Temporarily hide background and other UI elements for export
     const bgRect = stage.findOne('.canvas-bg');
     if (bgRect) bgRect.visible(false);
-    
-    // We also need to hide measurement lines and circles
-    // They are already hidden by !isExporting in the render, but state update is async.
-    // So we manually hide them or just capture the layer with the image.
     
     setTimeout(() => {
       const dataUrl = stage.toDataURL({ pixelRatio: 2 });
       if (bgRect) bgRect.visible(true);
       setIsExporting(false);
       
-      onComplete({
-        url: dataUrl,
-        width: stage.width(),
-        height: stage.height(),
-        backgroundColor,
-        measurements,
-        points: absolutePoints,
-        referenceScale
+      const updatedGarments = garments.map(g => {
+        if (g.id === activeGarmentId) {
+          return {
+            ...g,
+            url: dataUrl,
+            width: stage.width(),
+            height: stage.height(),
+            backgroundColor,
+            measurements,
+            points: absolutePoints,
+            referenceScale
+          };
+        }
+        return g;
       });
+      
+      onComplete(updatedGarments);
     }, 50);
   };
 
@@ -573,9 +718,10 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
       const pixelsPerCm = lenDist / measurements.length;
       const nextMeasurements = { ...measurements };
 
-      ['shoulder', 'chest'].forEach(key => {
-        const id1 = key === 'shoulder' ? 'sh_left' : 'ch_left';
-        const id2 = key === 'shoulder' ? 'sh_right' : 'ch_right';
+      const keysToUpdate = isPants ? ['waist', 'hip'] : ['shoulder', 'chest'];
+      keysToUpdate.forEach(key => {
+        const id1 = (key === 'shoulder' || key === 'waist') ? 'sh_left' : 'ch_left';
+        const id2 = (key === 'shoulder' || key === 'waist') ? 'sh_right' : 'ch_right';
         const dist = getPixelDist(id1, id2);
         if (dist > 0) {
           nextMeasurements[key as keyof typeof measurements] = parseFloat((dist / pixelsPerCm).toFixed(1));
@@ -583,7 +729,12 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
       });
 
       // Only update if changed to avoid loops
-      if (nextMeasurements.shoulder !== measurements.shoulder || nextMeasurements.chest !== measurements.chest) {
+      let hasChanged = false;
+      keysToUpdate.forEach(key => {
+        if (nextMeasurements[key] !== measurements[key]) hasChanged = true;
+      });
+      
+      if (hasChanged) {
         setMeasurements(nextMeasurements);
       }
     }
@@ -616,6 +767,29 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Canvas Area */}
         <div className="lg:col-span-8 space-y-4">
+          {/* Garment Tabs */}
+          {garments.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-2">
+              {garments.map((g, idx) => (
+                <button
+                  key={g.id}
+                  onClick={() => loadGarment(g.id)}
+                  className={`relative flex-shrink-0 w-20 h-20 rounded-xl border-2 overflow-hidden transition-all ${activeGarmentId === g.id ? 'border-slate-900 shadow-md' : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'}`}
+                >
+                  <img src={g.url} alt={g.name} className="w-full h-full object-contain bg-white" />
+                  <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] py-0.5 text-center truncate px-1 backdrop-blur-sm">
+                    {g.name}
+                  </div>
+                </button>
+              ))}
+              <label className="flex-shrink-0 w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 hover:bg-slate-50 flex flex-col items-center justify-center cursor-pointer transition-colors text-slate-400 hover:text-slate-600">
+                <Upload size={20} className="mb-1" />
+                <span className="text-[10px] font-medium">添加画面</span>
+                <input type="file" className="hidden" onChange={handleGarmentUpload} accept="image/*" multiple />
+              </label>
+            </div>
+          )}
+
           <div 
             ref={containerRef}
             className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-inner aspect-square w-full max-w-[800px] mx-auto flex items-center justify-center"
@@ -626,7 +800,7 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
                   <Upload className="w-8 h-8 text-slate-400" />
                 </div>
                 <p className="text-sm font-medium text-slate-600">{t.upload}</p>
-                <input type="file" className="hidden" onChange={handleGarmentUpload} accept="image/*" />
+                <input type="file" className="hidden" onChange={handleGarmentUpload} accept="image/*" multiple />
               </label>
             ) : (
               <div className="w-full h-full flex items-center justify-center" style={{
@@ -772,6 +946,22 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
         {/* Controls Area */}
         <div className="lg:col-span-4 flex flex-col h-[700px]">
           <div className="flex-1 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6 overflow-y-auto">
+            {/* Garment Name */}
+            {activeGarmentId && (
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-900">画面名称</label>
+                <input
+                  type="text"
+                  value={garments.find(g => g.id === activeGarmentId)?.name || ''}
+                  onChange={(e) => {
+                    setGarments(prev => prev.map(g => g.id === activeGarmentId ? { ...g, name: e.target.value } : g));
+                  }}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-all"
+                  placeholder="例如：前幅、后幅"
+                />
+              </div>
+            )}
+
             {/* AI & Canvas Tools */}
             <div className="space-y-4">
               <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
@@ -849,20 +1039,39 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang }) =>
               </div>
               
               <div className="space-y-3">
-                {['length', 'shoulder', 'chest'].map(key => (
-                  <div key={key} className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{(t as any)[key]}</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={measurements[key]}
-                        onChange={(e) => calculateSync(key, parseFloat(e.target.value))}
-                        className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-all"
-                      />
-                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400">CM</span>
+                {isPants ? (
+                  ['length', 'waist', 'hip'].map(key => (
+                    <div key={key} className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                        {key === 'length' ? '裤长' : key === 'waist' ? '腰围' : '臀围'}
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={measurements[key] || 0}
+                          onChange={(e) => calculateSync(key, parseFloat(e.target.value))}
+                          className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-all"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400">CM</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  ['length', 'shoulder', 'chest'].map(key => (
+                    <div key={key} className="space-y-1">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{(t as any)[key]}</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={measurements[key] || 0}
+                          onChange={(e) => calculateSync(key, parseFloat(e.target.value))}
+                          className="w-full pl-3 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none transition-all"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-slate-400">CM</span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="space-y-2 pt-2">

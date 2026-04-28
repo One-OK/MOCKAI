@@ -1,15 +1,22 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { Stage, Layer, Image as KonvaImage, Transformer, Group, Rect, Text, Line, Circle } from 'react-konva';
 import useImage from 'use-image';
 import { GarmentImage, LogoImage, Language } from '../types';
-import { Ruler, Move, Maximize2, Download, Layers, Trash2, Check, MousePointer2, ChevronRight } from 'lucide-react';
+import { Ruler, Move, Maximize2, Download, Layers, Trash2, Check, MousePointer2, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { translations } from '../i18n';
 
 interface MockupCanvasProps {
+  garments: GarmentImage[];
+  logos: LogoImage[];
+  lang: Language;
+  onExport: (data: {effectWithWatermark: string, effectNoWatermark: string, engineering: string, name: string}[]) => void;
+}
+
+interface SingleMockupCanvasProps {
   garment: GarmentImage;
   logos: LogoImage[];
   lang: Language;
-  onExport: (data: {withRulers: string, withoutRulers: string}) => void;
+  onExportSingle?: () => void;
 }
 
 interface LogoState {
@@ -114,41 +121,41 @@ const LogoItem = ({
               strokeScaleEnabled={false}
             />
             {/* Stitching Lines (1.5mm gap = 15 units since 1mm = 10 units in logo space) */}
-            {logo.labelProps?.stitchLeftRight && (
-              <>
-                <Line
-                  points={[15, 15, 15, logo.height - 15]}
-                  stroke={logo.labelProps?.borderColor || '#000000'}
-                  strokeWidth={1}
-                  dash={[4, 4]}
-                  strokeScaleEnabled={false}
-                />
-                <Line
-                  points={[logo.width - 15, 15, logo.width - 15, logo.height - 15]}
-                  stroke={logo.labelProps?.borderColor || '#000000'}
-                  strokeWidth={1}
-                  dash={[4, 4]}
-                  strokeScaleEnabled={false}
-                />
-              </>
+            {(logo.labelProps?.stitchLeft ?? logo.labelProps?.stitchLeftRight ?? true) && (
+              <Line
+                points={[15, 15, 15, logo.height - 15]}
+                stroke={logo.labelProps?.stitchColor || logo.labelProps?.borderColor || '#000000'}
+                strokeWidth={1}
+                dash={[4, 4]}
+                strokeScaleEnabled={false}
+              />
             )}
-            {logo.labelProps?.stitchTopBottom && (
-              <>
-                <Line
-                  points={[15, 15, logo.width - 15, 15]}
-                  stroke={logo.labelProps?.borderColor || '#000000'}
-                  strokeWidth={1}
-                  dash={[4, 4]}
-                  strokeScaleEnabled={false}
-                />
-                <Line
-                  points={[15, logo.height - 15, logo.width - 15, logo.height - 15]}
-                  stroke={logo.labelProps?.borderColor || '#000000'}
-                  strokeWidth={1}
-                  dash={[4, 4]}
-                  strokeScaleEnabled={false}
-                />
-              </>
+            {(logo.labelProps?.stitchRight ?? logo.labelProps?.stitchLeftRight ?? true) && (
+              <Line
+                points={[logo.width - 15, 15, logo.width - 15, logo.height - 15]}
+                stroke={logo.labelProps?.stitchColor || logo.labelProps?.borderColor || '#000000'}
+                strokeWidth={1}
+                dash={[4, 4]}
+                strokeScaleEnabled={false}
+              />
+            )}
+            {(logo.labelProps?.stitchTop ?? logo.labelProps?.stitchTopBottom ?? false) && (
+              <Line
+                points={[15, 15, logo.width - 15, 15]}
+                stroke={logo.labelProps?.stitchColor || logo.labelProps?.borderColor || '#000000'}
+                strokeWidth={1}
+                dash={[4, 4]}
+                strokeScaleEnabled={false}
+              />
+            )}
+            {(logo.labelProps?.stitchBottom ?? logo.labelProps?.stitchTopBottom ?? false) && (
+              <Line
+                points={[15, logo.height - 15, logo.width - 15, logo.height - 15]}
+                stroke={logo.labelProps?.stitchColor || logo.labelProps?.borderColor || '#000000'}
+                strokeWidth={1}
+                dash={[4, 4]}
+                strokeScaleEnabled={false}
+              />
             )}
             {labelImg ? (
               <Group clipX={0} clipY={0} clipWidth={logo.width} clipHeight={logo.height}>
@@ -205,7 +212,7 @@ const LogoItem = ({
   );
 };
 
-export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang, onExport }) => {
+const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ garment, logos, lang, onExportSingle }, ref) => {
   const t = translations[lang].mockup;
   const common = translations[lang].common;
 
@@ -216,19 +223,12 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
   // Initialize state for each logo
   const [logoStates, setLogoStates] = useState<LogoState[]>(() => {
     return logos.map((logo, index) => {
-      // Default scale: if image is large, scale it down to fit nicely
       let initialScale = 1;
       if (logo.type === 'image') {
-        // Default scale: make it fit nicely (e.g. 200px wide) instead of forcing 25cm
         const targetWidthPx = 200;
         initialScale = targetWidthPx / logo.width;
-        
-        // Limit scale if it's too huge or too small
         if (initialScale > 1) initialScale = 1;
       } else if (logo.type === 'label') {
-        // logo.width is physicalWidthMm * 10
-        // We want the rendered width to be physicalWidthMm * (pixelsPerCm / 10)
-        // So initialScale = (pixelsPerCm / 10) / 10 = pixelsPerCm / 100
         initialScale = pixelsPerCm / 100;
       }
       
@@ -238,7 +238,7 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
         y: 200 + index * 50,
         scaleX: initialScale,
         scaleY: initialScale,
-        rotation: 0,
+        rotation: logo.labelProps?.rotation || 0,
         blendMode: 'source-over' as const,
         opacity: 1,
         visible: true,
@@ -254,23 +254,67 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
     });
   });
 
+  // Sync new logos
+  useEffect(() => {
+    setLogoStates(prev => {
+      let newStates = prev.filter(state => logos.some(l => l.id === state.id));
+      let hasChanges = newStates.length !== prev.length;
+      
+      logos.forEach((logo, index) => {
+        if (!newStates.find(s => s.id === logo.id)) {
+          let initialScale = 1;
+          if (logo.type === 'image') {
+            const targetWidthPx = 200;
+            initialScale = targetWidthPx / logo.width;
+            if (initialScale > 1) initialScale = 1;
+          } else if (logo.type === 'label') {
+            initialScale = pixelsPerCm / 100;
+          }
+          
+          newStates.push({
+            id: logo.id,
+            x: 400 - (logo.width * initialScale) / 2,
+            y: 200 + index * 50,
+            scaleX: initialScale,
+            scaleY: initialScale,
+            rotation: logo.labelProps?.rotation || 0,
+            blendMode: 'source-over' as const,
+            opacity: 1,
+            visible: true,
+            visibleLines: {
+              top: true,
+              bottom: false,
+              left: true,
+              right: false,
+              auxA: false,
+              auxB: false
+            }
+          });
+          hasChanges = true;
+        }
+      });
+      
+      return hasChanges ? newStates : prev;
+    });
+  }, [logos, pixelsPerCm]);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isEditingLogo, setIsEditingLogo] = useState(false);
   const stageRef = useRef<any>(null);
 
   const [showRulers, setShowRulers] = useState(true);
-  const [previewAllLogos, setPreviewAllLogos] = useState(false);
   const [watermark, setWatermark] = useState({
     text: 'ASSSOO STUDIO',
-    fontSize: 36,
+    fontSize: 23,
     color: '#ffffff',
     bgColor: '#c8c8c8',
     opacity: 0.2,
-    x: 650,
-    y: 650,
+    x: 600,
+    y: 600,
     rotation: -45,
     scaleX: 1,
-    scaleY: 1
+    scaleY: 1,
+    visible: true
   });
   const [anchorPoints, setAnchorPoints] = useState<{
     topVertex: { x: number, y: number } | null;
@@ -298,27 +342,37 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
     }
   }, [selectedId, isEditingLogo]);
 
-  const handleExport = () => {
-    setSelectedId(null);
-    
-    // Generate without rulers
-    setShowRulers(false);
-    setTimeout(() => {
-      const urlWithoutRulers = stageRef.current.toDataURL({ pixelRatio: 2 });
-      
-      // Generate with rulers
-      setShowRulers(true);
+  useImperativeHandle(ref, () => ({
+    exportMockup: () => new Promise<{effectWithWatermark: string, effectNoWatermark: string, engineering: string, name: string}>((resolve) => {
+      setSelectedId(null);
+      setShowRulers(false);
+      const originalWatermarkVisible = watermark.visible;
+      setWatermark(prev => ({...prev, visible: false}));
       setTimeout(() => {
-        const urlWithRulers = stageRef.current.toDataURL({ pixelRatio: 2 });
-        
-        onExport({
-          withRulers: urlWithRulers,
-          withoutRulers: urlWithoutRulers
-        });
-        
-        setShowRulers(true); // Reset to default
+        const effectNoWatermark = stageRef.current.toDataURL({ pixelRatio: 2 });
+        setWatermark(prev => ({...prev, visible: true}));
+        setTimeout(() => {
+          const effectWithWatermark = stageRef.current.toDataURL({ pixelRatio: 2 });
+          setShowRulers(true);
+          setWatermark(prev => ({...prev, visible: false}));
+          setTimeout(() => {
+            const engineering = stageRef.current.toDataURL({ pixelRatio: 2 });
+            resolve({
+              effectWithWatermark,
+              effectNoWatermark,
+              engineering,
+              name: garment.name || ''
+            });
+            setShowRulers(true);
+            setWatermark(prev => ({...prev, visible: originalWatermarkVisible}));
+          }, 100);
+        }, 100);
       }, 100);
-    }, 100);
+    })
+  }));
+
+  const handleExport = () => {
+    if (onExportSingle) onExportSingle();
   };
 
   const checkDeselect = (e: any) => {
@@ -380,20 +434,53 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
     const auxAPoint = anchorPoints.auxA;
     const auxBPoint = anchorPoints.auxB;
     
-    const logoLeftX = logoState.x;
-    const logoRightX = logoState.x + (logo.width * logoState.scaleX);
-    const logoTopY = logoState.y;
-    const logoBottomY = logoState.y + (logo.height * logoState.scaleY);
-    const logoCenterX = logoState.x + (logo.width * logoState.scaleX) / 2;
-    const logoCenterY = logoState.y + (logo.height * logoState.scaleY) / 2;
+    const rad = (logoState.rotation || 0) * Math.PI / 180;
+    const w = logo.width * logoState.scaleX;
+    const h = logo.height * logoState.scaleY;
+
+    const rotatePoint = (px: number, py: number) => ({
+      x: logoState.x + px * Math.cos(rad) - py * Math.sin(rad),
+      y: logoState.y + px * Math.sin(rad) + py * Math.cos(rad)
+    });
+
+    const pts = [
+      rotatePoint(0, 0),
+      rotatePoint(w, 0),
+      rotatePoint(0, h),
+      rotatePoint(w, h)
+    ];
+
+    const xs = pts.map(p => p.x);
+    const ys = pts.map(p => p.y);
+
+    const logoLeftX = Math.min(...xs);
+    const logoRightX = Math.max(...xs);
+    const logoTopY = Math.min(...ys);
+    const logoBottomY = Math.max(...ys);
+    const logoCenterX = (logoLeftX + logoRightX) / 2;
+    const logoCenterY = (logoTopY + logoBottomY) / 2;
     
     let distTop = null;
     let distBottom = null;
     let distLeft = null;
     let distRight = null;
+    const getClosestPoint = (px: number, py: number, minX: number, minY: number, maxX: number, maxY: number) => {
+      let cx = px;
+      let cy = py;
+      if (px < minX) cx = minX;
+      else if (px > maxX) cx = maxX;
+      
+      if (py < minY) cy = minY;
+      else if (py > maxY) cy = maxY;
+      
+      return { x: cx, y: cy };
+    };
+
     let distAuxA = null;
     let distAuxB = null;
-    
+    let auxAProj: { axis: 'x'|'y', dir: 1|-1, p1: {x:number, y:number}, p2: {x:number, y:number}, dist: number } | null = null;
+    let auxBProj: { axis: 'x'|'y', dir: 1|-1, p1: {x:number, y:number}, p2: {x:number, y:number}, dist: number } | null = null;
+
     if (topPoint) {
       distTop = parseFloat(((logoTopY - topPoint.y) / pixelsPerCm).toFixed(1));
     }
@@ -406,14 +493,35 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
     if (rightPoint) {
       distRight = parseFloat(((rightPoint.x - logoRightX) / pixelsPerCm).toFixed(1));
     }
+
+    const calcProj = (pt: {x:number, y:number}) => {
+      const dx = pt.x - logoCenterX;
+      const dy = pt.y - logoCenterY;
+      if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx < 0) {
+          return { axis: 'x' as const, dir: -1 as const, p1: { x: pt.x, y: pt.y }, p2: { x: logoLeftX, y: pt.y }, dist: logoLeftX - pt.x };
+        } else {
+          return { axis: 'x' as const, dir: 1 as const, p1: { x: logoRightX, y: pt.y }, p2: { x: pt.x, y: pt.y }, dist: pt.x - logoRightX };
+        }
+      } else {
+        if (dy < 0) {
+          return { axis: 'y' as const, dir: -1 as const, p1: { x: pt.x, y: pt.y }, p2: { x: pt.x, y: logoTopY }, dist: logoTopY - pt.y };
+        } else {
+          return { axis: 'y' as const, dir: 1 as const, p1: { x: pt.x, y: logoBottomY }, p2: { x: pt.x, y: pt.y }, dist: pt.y - logoBottomY };
+        }
+      }
+    };
+
     if (auxAPoint) {
-      distAuxA = parseFloat((Math.sqrt(Math.pow(logoCenterX - auxAPoint.x, 2) + Math.pow(logoCenterY - auxAPoint.y, 2)) / pixelsPerCm).toFixed(1));
+      auxAProj = calcProj(auxAPoint);
+      distAuxA = parseFloat((auxAProj.dist / pixelsPerCm).toFixed(1));
     }
     if (auxBPoint) {
-      distAuxB = parseFloat((Math.sqrt(Math.pow(logoCenterX - auxBPoint.x, 2) + Math.pow(logoCenterY - auxBPoint.y, 2)) / pixelsPerCm).toFixed(1));
+      auxBProj = calcProj(auxBPoint);
+      distAuxB = parseFloat((auxBProj.dist / pixelsPerCm).toFixed(1));
     }
     
-    return { distTop, distBottom, distLeft, distRight, distAuxA, distAuxB, topPoint, bottomPoint, leftPoint, rightPoint, auxAPoint, auxBPoint };
+    return { distTop, distBottom, distLeft, distRight, distAuxA, distAuxB, topPoint, bottomPoint, leftPoint, rightPoint, auxAPoint, auxBPoint, auxAProj, auxBProj };
   };
 
   const handleDistanceChange = (key: 'top' | 'bottom' | 'left' | 'right' | 'auxA' | 'auxB', val: number) => {
@@ -421,19 +529,61 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
     const dists = getDistancesForLogo(activeLogoState, activeLogo);
     const pixels = val * pixelsPerCm;
 
+    const rad = (activeLogoState.rotation || 0) * Math.PI / 180;
+    const w = activeLogo.width * activeLogoState.scaleX;
+    const h = activeLogo.height * activeLogoState.scaleY;
+    const pts = [
+      { x: 0, y: 0 }, { x: w, y: 0 }, { x: 0, y: h }, { x: w, y: h }
+    ].map(p => ({
+      x: p.x * Math.cos(rad) - p.y * Math.sin(rad),
+      y: p.x * Math.sin(rad) + p.y * Math.cos(rad)
+    }));
+
+    const aabbWidth = Math.max(...pts.map(p => p.x)) - Math.min(...pts.map(p => p.x));
+    const aabbHeight = Math.max(...pts.map(p => p.y)) - Math.min(...pts.map(p => p.y));
+    const yOffset = Math.min(...pts.map(p => p.y));
+    const xOffset = Math.min(...pts.map(p => p.x));
+
     let newX = activeLogoState.x;
     let newY = activeLogoState.y;
 
     if (key === 'top' && dists.topPoint) {
-      newY = dists.topPoint.y + pixels;
+      newY = dists.topPoint.y + pixels - yOffset;
     } else if (key === 'bottom' && dists.bottomPoint) {
-      newY = dists.bottomPoint.y - pixels - (activeLogo.height * activeLogoState.scaleY);
+      newY = dists.bottomPoint.y - pixels - aabbHeight - yOffset;
     } else if (key === 'left' && dists.leftPoint) {
-      newX = dists.leftPoint.x + pixels;
+      newX = dists.leftPoint.x + pixels - xOffset;
     } else if (key === 'right' && dists.rightPoint) {
-      newX = dists.rightPoint.x - pixels - (activeLogo.width * activeLogoState.scaleX);
+      newX = dists.rightPoint.x - pixels - aabbWidth - xOffset;
+    } else if (key === 'auxA' && dists.auxAPoint && dists.auxAProj) {
+      if (dists.auxAProj.axis === 'x') {
+        if (dists.auxAProj.dir === -1) {
+          newX = dists.auxAPoint.x + pixels - xOffset;
+        } else {
+          newX = dists.auxAPoint.x - pixels - aabbWidth - xOffset;
+        }
+      } else {
+        if (dists.auxAProj.dir === -1) {
+          newY = dists.auxAPoint.y + pixels - yOffset;
+        } else {
+          newY = dists.auxAPoint.y - pixels - aabbHeight - yOffset;
+        }
+      }
+    } else if (key === 'auxB' && dists.auxBPoint && dists.auxBProj) {
+      if (dists.auxBProj.axis === 'x') {
+        if (dists.auxBProj.dir === -1) {
+          newX = dists.auxBPoint.x + pixels - xOffset;
+        } else {
+          newX = dists.auxBPoint.x - pixels - aabbWidth - xOffset;
+        }
+      } else {
+        if (dists.auxBProj.dir === -1) {
+          newY = dists.auxBPoint.y + pixels - yOffset;
+        } else {
+          newY = dists.auxBPoint.y - pixels - aabbHeight - yOffset;
+        }
+      }
     }
-    // For aux points, we don't handle direct distance input since it's a 2D distance
 
     updateActiveLogoState({ x: newX, y: newY });
   };
@@ -498,8 +648,7 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
             {logos.map((logo) => {
               const state = logoStates.find(s => s.id === logo.id);
               if (!state) return null;
-              if (!state.visible && !previewAllLogos) return null;
-              if (!previewAllLogos && logo.id !== selectedId) return null;
+              if (!state.visible) return null;
               return (
                 <LogoItem
                   key={logo.id}
@@ -550,7 +699,7 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
               );
             })}
             
-            {(showRulers && (previewAllLogos || selectedId)) && (
+            {showRulers && (
               <Group listening={false}>
                 {/* Draw anchor points */}
                 {(anchorPoints.topVertex || garment.points?.find(p => p.id === 'len_top')) && (
@@ -574,8 +723,7 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
 
                 {/* Draw ruler lines */}
                 {logoStates.map((logoState, index) => {
-                  if (!logoState.visible && !previewAllLogos) return null;
-                  if (!previewAllLogos && logoState.id !== selectedId) return null;
+                  if (!logoState.visible) return null;
                   
                   const logo = logos.find(l => l.id === logoState.id);
                   if (!logo) return null;
@@ -688,14 +836,14 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                       )}
 
                       {/* AuxA distance line */}
-                      {logoState.visibleLines.auxA && dists.distAuxA !== null && dists.auxAPoint && (
+                      {logoState.visibleLines.auxA && dists.distAuxA !== null && dists.auxAPoint && dists.auxAProj && (
                         <Group>
                           <Line
-                            points={[logoCenterX, logoCenterY, dists.auxAPoint.x, dists.auxAPoint.y]}
+                            points={[dists.auxAProj.p1.x, dists.auxAProj.p1.y, dists.auxAProj.p2.x, dists.auxAProj.p2.y]}
                             stroke={color} strokeWidth={1} dash={[4, 4]}
                           />
                           <Text
-                            x={(logoCenterX + dists.auxAPoint.x) / 2} y={(logoCenterY + dists.auxAPoint.y) / 2 - 15}
+                            x={(dists.auxAProj.p1.x + dists.auxAProj.p2.x) / 2} y={(dists.auxAProj.p1.y + dists.auxAProj.p2.y) / 2 - 15}
                             text={`${dists.distAuxA} cm`}
                             fill={color} fontSize={12} fontStyle="bold"
                             shadowColor="white" shadowBlur={2} shadowOpacity={1}
@@ -704,14 +852,14 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                       )}
 
                       {/* AuxB distance line */}
-                      {logoState.visibleLines.auxB && dists.distAuxB !== null && dists.auxBPoint && (
+                      {logoState.visibleLines.auxB && dists.distAuxB !== null && dists.auxBPoint && dists.auxBProj && (
                         <Group>
                           <Line
-                            points={[logoCenterX, logoCenterY, dists.auxBPoint.x, dists.auxBPoint.y]}
+                            points={[dists.auxBProj.p1.x, dists.auxBProj.p1.y, dists.auxBProj.p2.x, dists.auxBProj.p2.y]}
                             stroke={color} strokeWidth={1} dash={[4, 4]}
                           />
                           <Text
-                            x={(logoCenterX + dists.auxBPoint.x) / 2} y={(logoCenterY + dists.auxBPoint.y) / 2 - 15}
+                            x={(dists.auxBProj.p1.x + dists.auxBProj.p2.x) / 2} y={(dists.auxBProj.p1.y + dists.auxBProj.p2.y) / 2 - 15}
                             text={`${dists.distAuxB} cm`}
                             fill={color} fontSize={12} fontStyle="bold"
                             shadowColor="white" shadowBlur={2} shadowOpacity={1}
@@ -725,7 +873,7 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
             )}
             
             {/* Watermark */}
-            {watermark.text && (
+            {watermark.text && watermark.visible && (
               <React.Fragment>
                 <Group
                   ref={watermarkRef}
@@ -771,11 +919,11 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                   }}
                 >
                   <Rect
-                    width={600}
+                    width={400}
                     height={watermark.fontSize * 2}
                     fill={watermark.bgColor}
                     opacity={watermark.opacity}
-                    offsetX={300}
+                    offsetX={200}
                     offsetY={watermark.fontSize}
                     cornerRadius={8}
                   />
@@ -788,9 +936,9 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                     opacity={watermark.opacity}
                     align="center"
                     verticalAlign="middle"
-                    offsetX={300}
+                    offsetX={200}
                     offsetY={watermark.fontSize / 2}
-                    width={600}
+                    width={400}
                   />
                 </Group>
                 {selectedId === 'watermark' && isEditingLogo && (
@@ -818,13 +966,6 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
             >
               <Ruler size={18} />
               {showRulers ? '隐藏尺寸标注' : '一键标注尺寸'}
-            </button>
-            <button
-              onClick={() => setPreviewAllLogos(!previewAllLogos)}
-              className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${previewAllLogos ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-            >
-              <Layers size={18} />
-              {previewAllLogos ? '隐藏所有LOGO' : '一键预览LOGO'}
             </button>
           </div>
 
@@ -1051,8 +1192,10 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                         <input
                           type="number"
                           value={distances.distAuxA !== null ? distances.distAuxA : ''}
-                          disabled={true}
-                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm outline-none disabled:opacity-50"
+                          onChange={(e) => handleDistanceChange('auxA', parseFloat(e.target.value))}
+                          disabled={distances.distAuxA === null}
+                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm focus:ring-1 focus:ring-slate-900 outline-none disabled:opacity-50"
+                          step="0.1"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1067,8 +1210,10 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
                         <input
                           type="number"
                           value={distances.distAuxB !== null ? distances.distAuxB : ''}
-                          disabled={true}
-                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm outline-none disabled:opacity-50"
+                          onChange={(e) => handleDistanceChange('auxB', parseFloat(e.target.value))}
+                          disabled={distances.distAuxB === null}
+                          className="w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded text-sm focus:ring-1 focus:ring-slate-900 outline-none disabled:opacity-50"
+                          step="0.1"
                         />
                       </div>
                     </div>
@@ -1080,9 +1225,17 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
           
           {/* Watermark Control */}
           <div className="space-y-4 pt-4 border-t border-slate-100">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-              水印设置
-            </h4>
+            <div className="flex justify-between items-center">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                水印设置
+              </h4>
+              <button
+                onClick={() => setWatermark(prev => ({ ...prev, visible: !prev.visible }))}
+                className="text-slate-400 hover:text-slate-900 transition-colors tooltip-wrapper relative"
+              >
+                {watermark.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+              </button>
+            </div>
             <input
               type="text"
               placeholder="ASSSOO STUDIO"
@@ -1167,11 +1320,86 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garment, logos, lang
             onClick={handleExport}
             className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20"
           >
-            继续导出
+            {onExportSingle ? '继续导出全部' : '继续导出'}
             <ChevronRight size={20} />
           </button>
         </div>
       </div>
+    </div>
+  );
+});
+
+export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garments, logos, lang, onExport }) => {
+  const [activeGarmentId, setActiveGarmentId] = useState(garments[0]?.id);
+  const refs = useRef<Record<string, any>>({});
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportAll = async () => {
+    setIsExporting(true);
+    const results = [];
+    for (const g of garments) {
+      if (refs.current[g.id]) {
+        const data = await refs.current[g.id].exportMockup();
+        results.push(data);
+      }
+    }
+    setIsExporting(false);
+    onExport(results);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 h-full relative">
+      {garments.length > 1 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-2 flex items-center gap-2 overflow-x-auto shrink-0 z-10">
+          {garments.map(g => (
+            <button
+              key={g.id}
+              onClick={() => setActiveGarmentId(g.id)}
+              className={`flex-shrink-0 px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${activeGarmentId === g.id ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+            >
+              {g.name || '未命名'}
+            </button>
+          ))}
+          <div className="ml-auto pl-2">
+            <button 
+              onClick={handleExportAll} 
+              disabled={isExporting} 
+              className="px-6 py-2.5 bg-emerald-500 text-white text-sm font-bold rounded-xl disabled:opacity-50 hover:bg-emerald-600 transition-colors whitespace-nowrap"
+            >
+              {isExporting ? '生成中...' : '生成全部并导出'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex-1 relative min-h-[700px]">
+        {garments.map(g => (
+          <div 
+            key={g.id} 
+            className="absolute inset-0 transition-opacity duration-300" 
+            style={{ 
+              zIndex: activeGarmentId === g.id ? 10 : 0, 
+              opacity: activeGarmentId === g.id ? 1 : 0, 
+              pointerEvents: activeGarmentId === g.id ? 'auto' : 'none' 
+            }}
+          >
+            <SingleMockupCanvas 
+              garment={g} 
+              logos={logos} 
+              lang={lang} 
+              ref={(el) => refs.current[g.id] = el}
+              onExportSingle={handleExportAll}
+            />
+          </div>
+        ))}
+      </div>
+
+      {isExporting && (
+        <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded-2xl">
+          <div className="w-16 h-16 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin"></div>
+          <p className="mt-4 text-slate-900 font-bold tracking-wide">正在生成高清效果图...</p>
+        </div>
+      )}
     </div>
   );
 };

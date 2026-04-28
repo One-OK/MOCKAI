@@ -5,15 +5,20 @@ import { GarmentStep } from './components/GarmentStep';
 import { LogoStep } from './components/LogoStep';
 import { MockupCanvas } from './components/MockupCanvas';
 import { ExportStep } from './components/ExportStep';
-import { Shirt, Image as ImageIcon, Layout, Download, ChevronRight, ArrowLeft, Languages } from 'lucide-react';
+import { ProjectManager } from './components/ProjectManager';
+import { Shirt, Image as ImageIcon, Layout, Download, ChevronRight, ArrowLeft, Languages, Settings, FolderOpen } from 'lucide-react';
 import { translations } from './i18n';
+import { MeasurementSettings } from './types';
 
 export default function App() {
   const [step, setStep] = useState<AppStep>('garment');
   const [lang, setLang] = useState<Language>('zh'); // Default to Chinese as requested
-  const [garment, setGarment] = useState<GarmentImage | null>(null);
+  const [garments, setGarments] = useState<GarmentImage[]>([]);
   const [logos, setLogos] = useState<LogoImage[]>([]);
-  const [finalMockup, setFinalMockup] = useState<{withRulers: string, withoutRulers: string} | null>(null);
+  const [finalMockup, setFinalMockup] = useState<{effectWithWatermark: string, effectNoWatermark: string, engineering: string, name: string}[] | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showProjectManager, setShowProjectManager] = useState(false);
+  const [measurementSettings, setMeasurementSettings] = useState<MeasurementSettings>({ method: 'tshirt' });
 
   const steps: { id: AppStep; label: string; icon: any }[] = [
     { id: 'garment', label: translations[lang].steps.garment, icon: Shirt },
@@ -22,8 +27,8 @@ export default function App() {
     { id: 'export', label: translations[lang].steps.export, icon: Download },
   ];
 
-  const handleGarmentComplete = (data: GarmentImage) => {
-    setGarment(data);
+  const handleGarmentComplete = (data: GarmentImage[]) => {
+    setGarments(data);
     setStep('logo');
   };
 
@@ -32,13 +37,13 @@ export default function App() {
     setStep('mockup');
   };
 
-  const handleMockupComplete = (data: {withRulers: string, withoutRulers: string}) => {
+  const handleMockupComplete = (data: {effectWithWatermark: string, effectNoWatermark: string, engineering: string, name: string}[]) => {
     setFinalMockup(data);
     setStep('export');
   };
 
   const handleRestart = () => {
-    setGarment(null);
+    setGarments([]);
     setLogos([]);
     setFinalMockup(null);
     setStep('garment');
@@ -99,12 +104,103 @@ export default function App() {
               EN
             </button>
           </div>
+          <button 
+            onClick={() => setShowProjectManager(true)}
+            className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1"
+          >
+            <FolderOpen size={14} />
+            作图记录
+          </button>
           <button className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1">
             <Languages size={14} />
             Help
           </button>
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="text-xs font-bold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1"
+          >
+            <Settings size={14} />
+            设置
+          </button>
         </div>
       </header>
+
+      {showProjectManager && (
+        <ProjectManager
+          onClose={() => setShowProjectManager(false)}
+          currentGarments={garments}
+          currentLogos={logos}
+          onLoad={(loadedGarments, loadedLogos) => {
+            setGarments(loadedGarments);
+            setLogos(loadedLogos);
+            if (loadedGarments.length > 0 && loadedLogos.length > 0) {
+              setStep('mockup');
+            } else if (loadedGarments.length > 0) {
+              setStep('logo');
+            } else {
+              setStep('garment');
+            }
+          }}
+        />
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center">
+          <div className="bg-white rounded-2xl p-6 w-[400px] shadow-xl">
+            <h3 className="text-lg font-bold text-slate-900 mb-4">测量方法设置</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">默认测量款式</label>
+                <select 
+                  value={measurementSettings.method}
+                  onChange={(e) => setMeasurementSettings({ method: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none"
+                >
+                  <option value="tshirt">T恤 (T-Shirt)</option>
+                  <option value="hoodie">卫衣 (Hoodie)</option>
+                  <option value="pants">裤子 (Pants)</option>
+                  <option value="custom">自定义 (Custom)</option>
+                </select>
+              </div>
+              <div className="text-xs text-slate-500 bg-slate-50 p-3 rounded-lg">
+                {measurementSettings.method === 'tshirt' && (
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>衣长：右侧领口肩缝交点至下摆</li>
+                    <li>肩宽：左右肩袖缝交点连线</li>
+                    <li>胸围：左右腋下侧缝交点连线</li>
+                  </ul>
+                )}
+                {measurementSettings.method === 'hoodie' && (
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>衣长：帽根至下摆</li>
+                    <li>肩宽：左右肩袖缝交点连线</li>
+                    <li>胸围：左右腋下侧缝交点连线</li>
+                  </ul>
+                )}
+                {measurementSettings.method === 'pants' && (
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>裤长：腰头至裤脚</li>
+                    <li>腰围：腰头左右连线</li>
+                    <li>臀围：裆部上方最宽处连线</li>
+                  </ul>
+                )}
+                {measurementSettings.method === 'custom' && (
+                  <p>自定义测量点位，可自由拖动调整。</p>
+                )}
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800"
+              >
+                确定
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 p-6 md:p-12 max-w-7xl mx-auto w-full">
@@ -122,29 +218,24 @@ export default function App() {
 
         <div className="h-full relative">
           <div style={{ display: step === 'garment' ? 'block' : 'none' }}>
-            <GarmentStep onComplete={handleGarmentComplete} lang={lang} />
+            <GarmentStep onComplete={handleGarmentComplete} lang={lang} measurementSettings={measurementSettings} />
           </div>
           <div style={{ display: step === 'logo' ? 'block' : 'none' }}>
-            <LogoStep onComplete={handleLogoComplete} garment={garment} lang={lang} />
+            <LogoStep onComplete={handleLogoComplete} garments={garments} lang={lang} />
           </div>
           
-          <AnimatePresence mode="wait">
-            {step === 'mockup' && garment && logos.length > 0 && (
-              <motion.div
-                key="mockup"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <MockupCanvas 
-                  garment={garment} 
-                  logos={logos} 
-                  lang={lang}
-                  onExport={handleMockupComplete} 
-                />
-              </motion.div>
+          <div style={{ display: step === 'mockup' ? 'block' : 'none', height: '100%' }}>
+            {garments.length > 0 && logos.length > 0 && (
+              <MockupCanvas 
+                garments={garments} 
+                logos={logos} 
+                lang={lang}
+                onExport={handleMockupComplete} 
+              />
             )}
+          </div>
+
+          <AnimatePresence mode="wait">
             {step === 'export' && finalMockup && (
               <motion.div
                 key="export"

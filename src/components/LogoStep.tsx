@@ -7,7 +7,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 interface LogoStepProps {
   onComplete: (logos: LogoImage[]) => void;
-  garment: GarmentImage | null;
+  garments?: GarmentImage[];
   lang: Language;
 }
 
@@ -21,7 +21,7 @@ const PRESET_COLORS = [
   { name: 'Silver', value: '#475569' },
 ];
 
-export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garment, lang }) => {
+export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }) => {
   const t = translations[lang].logo;
   
   const [logos, setLogos] = useState<LogoImage[]>([]);
@@ -115,6 +115,7 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garment, lang })
         borderWidth: 1,
         stitchLeftRight: true,
         stitchTopBottom: false,
+        stitchColor: '#000000',
         physicalWidthMm: 60,
         physicalHeightMm: 20,
         fontSize: 40
@@ -495,21 +496,21 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garment, lang })
                           border: `${activeLogo.labelProps?.borderWidth ?? 1}px ${activeLogo.labelProps?.borderStyle || 'solid'} ${activeLogo.labelProps?.borderColor}`,
                           color: activeLogo.labelProps?.textColor,
                           transformOrigin: 'center',
-                          transform: `scale(${scale})`
+                          transform: `scale(${scale}) rotate(${activeLogo.labelProps?.rotation || 0}deg)`
                         }}
                       >
                     {/* Stitching Lines (15px from edge) */}
-              {activeLogo.labelProps?.stitchLeftRight && (
-                <>
-                  <div className="absolute left-[15px] top-[15px] bottom-[15px] border-l border-dashed" style={{ borderColor: activeLogo.labelProps?.borderColor }} />
-                  <div className="absolute right-[15px] top-[15px] bottom-[15px] border-r border-dashed" style={{ borderColor: activeLogo.labelProps?.borderColor }} />
-                </>
+              {(activeLogo.labelProps?.stitchLeft ?? activeLogo.labelProps?.stitchLeftRight ?? true) && (
+                <div className="absolute left-[15px] top-[15px] bottom-[15px] border-l border-dashed" style={{ borderColor: activeLogo.labelProps?.stitchColor || activeLogo.labelProps?.borderColor }} />
               )}
-              {activeLogo.labelProps?.stitchTopBottom && (
-                <>
-                  <div className="absolute top-[15px] left-[15px] right-[15px] border-t border-dashed" style={{ borderColor: activeLogo.labelProps?.borderColor }} />
-                  <div className="absolute bottom-[15px] left-[15px] right-[15px] border-b border-dashed" style={{ borderColor: activeLogo.labelProps?.borderColor }} />
-                </>
+              {(activeLogo.labelProps?.stitchRight ?? activeLogo.labelProps?.stitchLeftRight ?? true) && (
+                <div className="absolute right-[15px] top-[15px] bottom-[15px] border-r border-dashed" style={{ borderColor: activeLogo.labelProps?.stitchColor || activeLogo.labelProps?.borderColor }} />
+              )}
+              {(activeLogo.labelProps?.stitchTop ?? activeLogo.labelProps?.stitchTopBottom ?? false) && (
+                <div className="absolute top-[15px] left-[15px] right-[15px] border-t border-dashed" style={{ borderColor: activeLogo.labelProps?.stitchColor || activeLogo.labelProps?.borderColor }} />
+              )}
+              {(activeLogo.labelProps?.stitchBottom ?? activeLogo.labelProps?.stitchTopBottom ?? false) && (
+                <div className="absolute bottom-[15px] left-[15px] right-[15px] border-b border-dashed" style={{ borderColor: activeLogo.labelProps?.stitchColor || activeLogo.labelProps?.borderColor }} />
               )}
               {activeLogo.labelProps?.imageUrl ? (
                 <img 
@@ -751,6 +752,40 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garment, lang })
                       </div>
                     </div>
 
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">快捷颜色设置</label>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => updateLabelProps({ color: '#ffffff', textColor: '#000000', borderColor: '#000000', stitchColor: '#000000' })}
+                          className="flex-1 py-2 bg-white text-slate-900 border border-slate-300 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors shadow-sm text-center"
+                        >
+                          白底黑字
+                        </button>
+                        <button 
+                          onClick={() => updateLabelProps({ color: '#000000', textColor: '#ffffff', borderColor: '#ffffff', stitchColor: '#ffffff' })}
+                          className="flex-1 py-2 bg-slate-900 text-white border border-slate-900 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors shadow-sm text-center"
+                        >
+                          黑底白字
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">旋转方向 (度)</label>
+                    <select
+                      value={activeLogo.labelProps?.rotation || 0}
+                      onChange={(e) => updateLabelProps({ rotation: parseInt(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none"
+                    >
+                      <option value="0">0° (水平)</option>
+                      <option value="90">90° (垂直)</option>
+                      <option value="180">180° (倒置)</option>
+                      <option value="270">270°</option>
+                    </select>
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">背景颜色</label>
                     <div className="flex items-center gap-2">
@@ -806,36 +841,68 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garment, lang })
                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">边框粗细 (px)</label>
                       <input 
                         type="number" 
-                        min="1"
+                        min="0"
                         max="20"
-                        value={activeLogo.labelProps?.borderWidth || 1}
-                        onChange={(e) => updateLabelProps({ borderWidth: parseInt(e.target.value) || 1 })}
+                        value={activeLogo.labelProps?.borderWidth ?? 1}
+                        onChange={(e) => updateLabelProps({ borderWidth: parseInt(e.target.value) || 0 })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none"
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">车线位置</label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">车线颜色</label>
+                      <div className="flex items-center gap-2">
                         <input 
-                          type="checkbox" 
-                          checked={activeLogo.labelProps?.stitchLeftRight ?? true}
-                          onChange={(e) => updateLabelProps({ stitchLeftRight: e.target.checked })}
-                          className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          type="color" 
+                          value={activeLogo.labelProps?.stitchColor || '#000000'}
+                          onChange={(e) => updateLabelProps({ stitchColor: e.target.value })}
+                          className="w-8 h-8 rounded cursor-pointer border border-slate-200"
                         />
-                        <span className="text-sm text-slate-700">左右车线</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={activeLogo.labelProps?.stitchTopBottom ?? false}
-                          onChange={(e) => updateLabelProps({ stitchTopBottom: e.target.checked })}
-                          className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
-                        />
-                        <span className="text-sm text-slate-700">上下车线</span>
-                      </label>
+                        <span className="text-sm text-slate-600 uppercase font-mono">{activeLogo.labelProps?.stitchColor || '#000000'}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">车线位置</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={activeLogo.labelProps?.stitchLeft ?? activeLogo.labelProps?.stitchLeftRight ?? true}
+                            onChange={(e) => updateLabelProps({ stitchLeft: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          />
+                          <span className="text-sm text-slate-700">左侧</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={activeLogo.labelProps?.stitchRight ?? activeLogo.labelProps?.stitchLeftRight ?? true}
+                            onChange={(e) => updateLabelProps({ stitchRight: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          />
+                          <span className="text-sm text-slate-700">右侧</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={activeLogo.labelProps?.stitchTop ?? activeLogo.labelProps?.stitchTopBottom ?? false}
+                            onChange={(e) => updateLabelProps({ stitchTop: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          />
+                          <span className="text-sm text-slate-700">上部</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={activeLogo.labelProps?.stitchBottom ?? activeLogo.labelProps?.stitchTopBottom ?? false}
+                            onChange={(e) => updateLabelProps({ stitchBottom: e.target.checked })}
+                            className="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900"
+                          />
+                          <span className="text-sm text-slate-700">下部</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
 

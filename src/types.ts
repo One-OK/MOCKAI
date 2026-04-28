@@ -9,6 +9,8 @@ export interface MeasurementPoint {
 }
 
 export interface GarmentImage {
+  id: string;
+  name: string; // e.g., "前幅" (Front), "后幅" (Back)
   url: string;
   width: number;
   height: number;
@@ -39,9 +41,15 @@ export interface LogoImage {
     borderWidth?: number;
     stitchLeftRight?: boolean;
     stitchTopBottom?: boolean;
+    stitchLeft?: boolean;
+    stitchRight?: boolean;
+    stitchTop?: boolean;
+    stitchBottom?: boolean;
+    stitchColor?: string;
     physicalWidthMm?: number;
     physicalHeightMm?: number;
     fontSize?: number;
+    rotation?: number;
     imageScale?: number;
     imageOffsetX?: number;
     imageOffsetY?: number;
@@ -49,3 +57,9 @@ export interface LogoImage {
 }
 
 export type AppStep = 'garment' | 'logo' | 'mockup' | 'export';
+
+export type MeasurementMethod = 'tshirt' | 'hoodie' | 'pants' | 'custom';
+
+export interface MeasurementSettings {
+  method: MeasurementMethod;
+}
