@@ -228,7 +228,24 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
     const targetUrl = urlToProcess || garmentUrl;
     if (!targetUrl) return;
     setIsProcessing(true);
-    
+
+    try {
+      // Use AI-based background removal. Preserves original dimensions so
+      // garmentPos and measurement points stay accurate.
+      const mod: any = await import('@imgly/background-removal');
+      const removeBgFn = mod.removeBackground || mod.default;
+      if (typeof removeBgFn === 'function') {
+        const blob: Blob = await removeBgFn(targetUrl);
+        const newUrl = URL.createObjectURL(blob);
+        setGarmentUrl(newUrl);
+        setIsProcessing(false);
+        return;
+      }
+    } catch (aiErr) {
+      console.warn('AI bg-removal failed, falling back to flood-fill:', aiErr);
+    }
+
+    // Fallback: flood-fill based removal (original code)
     try {
       const newUrl = await new Promise<string>((resolve, reject) => {
         const img = new Image();

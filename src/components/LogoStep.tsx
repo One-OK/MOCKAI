@@ -112,7 +112,7 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }
         borderColor: '#000000',
         textColor: '#000000',
         borderStyle: 'solid',
-        borderWidth: 1,
+        borderWidth: 0,
         stitchLeftRight: true,
         stitchTopBottom: false,
         stitchColor: '#000000',
