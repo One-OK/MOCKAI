@@ -482,7 +482,7 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
           const newName = garments.length === 0 && index === 0 ? '前幅' : `画面 ${garments.length + index + 1}`;
           
           let defaultPoints: RelativePoint[];
-          let startingMeasurements = { length: 70, shoulder: 45, chest: 52, sleeve: 60 };
+          let startingMeasurements: { [key: string]: number } = { length: 70, shoulder: 45, chest: 52, sleeve: 60 };
 
           if (garmentUrl || garments.length > 0) {
             defaultPoints = JSON.parse(JSON.stringify(points));
