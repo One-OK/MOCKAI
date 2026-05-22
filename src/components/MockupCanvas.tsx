@@ -16,8 +16,58 @@ interface SingleMockupCanvasProps {
   garment: GarmentImage;
   logos: LogoImage[];
   lang: Language;
+  watermark: WatermarkState;
+  onWatermarkChange: (newWatermark: WatermarkState) => void;
+  anchorPoints: AnchorPointsState;
+  onAnchorPointsChange: (newAnchors: AnchorPointsState) => void;
   onExportSingle?: () => void;
 }
+
+export interface WatermarkState {
+  text: string;
+  fontSize: number;
+  color: string;
+  bgColor: string;
+  opacity: number;
+  x: number;
+  y: number;
+  rotation: number;
+  scaleX: number;
+  scaleY: number;
+  visible: boolean;
+}
+
+export interface AnchorPointsState {
+  topVertex: { x: number, y: number } | null;
+  bottomLine: { x: number, y: number } | null;
+  leftLine: { x: number, y: number } | null;
+  rightLine: { x: number, y: number } | null;
+  auxA: { x: number, y: number } | null;
+  auxB: { x: number, y: number } | null;
+}
+
+const DEFAULT_WATERMARK: WatermarkState = {
+  text: 'ASSSOO STUDIO',
+  fontSize: 23,
+  color: '#ffffff',
+  bgColor: '#c8c8c8',
+  opacity: 0.2,
+  x: 600,
+  y: 600,
+  rotation: -45,
+  scaleX: 1,
+  scaleY: 1,
+  visible: true
+};
+
+const DEFAULT_ANCHORS: AnchorPointsState = {
+  topVertex: null,
+  bottomLine: null,
+  leftLine: null,
+  rightLine: null,
+  auxA: null,
+  auxB: null
+};
 
 interface LogoState {
   id: string;
@@ -212,7 +262,7 @@ const LogoItem = ({
   );
 };
 
-const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ garment, logos, lang, onExportSingle }, ref) => {
+const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ garment, logos, lang, watermark, onWatermarkChange, anchorPoints, onAnchorPointsChange, onExportSingle }, ref) => {
   const t = translations[lang].mockup;
   const common = translations[lang].common;
 
@@ -303,34 +353,22 @@ const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ gar
   const stageRef = useRef<any>(null);
 
   const [showRulers, setShowRulers] = useState(true);
-  const [watermark, setWatermark] = useState({
-    text: 'ASSSOO STUDIO',
-    fontSize: 23,
-    color: '#ffffff',
-    bgColor: '#c8c8c8',
-    opacity: 0.2,
-    x: 600,
-    y: 600,
-    rotation: -45,
-    scaleX: 1,
-    scaleY: 1,
-    visible: true
-  });
-  const [anchorPoints, setAnchorPoints] = useState<{
-    topVertex: { x: number, y: number } | null;
-    bottomLine: { x: number, y: number } | null;
-    leftLine: { x: number, y: number } | null;
-    rightLine: { x: number, y: number } | null;
-    auxA: { x: number, y: number } | null;
-    auxB: { x: number, y: number } | null;
-  }>({
-    topVertex: null,
-    bottomLine: null,
-    leftLine: null,
-    rightLine: null,
-    auxA: null,
-    auxB: null
-  });
+  // Track latest props in refs so async callbacks (like exportMockup setTimeouts) see fresh values
+  const watermarkRefVal = useRef(watermark);
+  const anchorPointsRefVal = useRef(anchorPoints);
+  useEffect(() => { watermarkRefVal.current = watermark; }, [watermark]);
+  useEffect(() => { anchorPointsRefVal.current = anchorPoints; }, [anchorPoints]);
+  // Wrappers that work like useState's setters but route through parent props (with cascade)
+  const setWatermark = (updater: WatermarkState | ((prev: WatermarkState) => WatermarkState)) => {
+    const next = typeof updater === 'function' ? (updater as (p: WatermarkState) => WatermarkState)(watermarkRefVal.current) : updater;
+    watermarkRefVal.current = next;
+    onWatermarkChange(next);
+  };
+  const setAnchorPoints = (updater: AnchorPointsState | ((prev: AnchorPointsState) => AnchorPointsState)) => {
+    const next = typeof updater === 'function' ? (updater as (p: AnchorPointsState) => AnchorPointsState)(anchorPointsRefVal.current) : updater;
+    anchorPointsRefVal.current = next;
+    onAnchorPointsChange(next);
+  };
   const [activeAnchorId, setActiveAnchorId] = useState<'topVertex' | 'bottomLine' | 'leftLine' | 'rightLine' | 'auxA' | 'auxB' | null>(null);
   const watermarkRef = useRef<any>(null);
   const watermarkTrRef = useRef<any>(null);
@@ -599,18 +637,32 @@ const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ gar
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Use ResizeObserver to keep scale in sync with container size.
+  // This fixes the issue where a hidden canvas (e.g. while user navigates back to logo/garment step,
+  // or before its tab becomes active) measures 0x0 and stays invisible after becoming visible again.
   useEffect(() => {
     const updateScale = () => {
-      if (containerRef.current) {
-        const { width, height } = containerRef.current.getBoundingClientRect();
-        const minDim = Math.min(width, height);
-        setScale(minDim / 800);
+      if (!containerRef.current) return;
+      const { width, height } = containerRef.current.getBoundingClientRect();
+      const minDim = Math.min(width, height);
+      if (minDim > 0) {
+        setScale(prev => {
+          const next = minDim / 800;
+          // Avoid unnecessary state updates that would cause Konva re-renders
+          return Math.abs(prev - next) < 0.0001 ? prev : next;
+        });
       }
     };
-
     updateScale();
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateScale);
+    ro.observe(el);
     window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', updateScale);
+    };
   }, []);
 
   return (
@@ -668,29 +720,34 @@ const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ gar
                     const dists = getDistancesForLogo(newAttrs, logo);
                     let visibleLines = { ...newAttrs.visibleLines };
                     if (dists) {
-                      const distArr = [
-                        { key: 'top', val: dists.distTop },
-                        { key: 'bottom', val: dists.distBottom },
-                        { key: 'left', val: dists.distLeft },
-                        { key: 'right', val: dists.distRight },
-                        { key: 'auxA', val: dists.distAuxA },
-                        { key: 'auxB', val: dists.distAuxB }
-                      ].filter(d => d.val !== null) as { key: string, val: number }[];
-                      
-                      distArr.sort((a, b) => a.val - b.val);
-                      
+                      // Split candidates by axis: vertical (top/bottom + aux on y-axis) vs horizontal (left/right + aux on x-axis)
+                      const verticalCandidates: { key: keyof typeof visibleLines, val: number }[] = [];
+                      const horizontalCandidates: { key: keyof typeof visibleLines, val: number }[] = [];
+
+                      if (dists.distTop !== null) verticalCandidates.push({ key: 'top', val: dists.distTop });
+                      if (dists.distBottom !== null) verticalCandidates.push({ key: 'bottom', val: dists.distBottom });
+                      if (dists.distLeft !== null) horizontalCandidates.push({ key: 'left', val: dists.distLeft });
+                      if (dists.distRight !== null) horizontalCandidates.push({ key: 'right', val: dists.distRight });
+
+                      // Aux points: classified by their projection axis (calcProj already sets 'x' or 'y')
+                      if (dists.distAuxA !== null && dists.auxAProj) {
+                        if (dists.auxAProj.axis === 'y') verticalCandidates.push({ key: 'auxA', val: dists.distAuxA });
+                        else horizontalCandidates.push({ key: 'auxA', val: dists.distAuxA });
+                      }
+                      if (dists.distAuxB !== null && dists.auxBProj) {
+                        if (dists.auxBProj.axis === 'y') verticalCandidates.push({ key: 'auxB', val: dists.distAuxB });
+                        else horizontalCandidates.push({ key: 'auxB', val: dists.distAuxB });
+                      }
+
+                      // Pick the minimum (by absolute distance) from each axis
+                      verticalCandidates.sort((a, b) => Math.abs(a.val) - Math.abs(b.val));
+                      horizontalCandidates.sort((a, b) => Math.abs(a.val) - Math.abs(b.val));
+
                       visibleLines = {
                         top: false, bottom: false, left: false, right: false, auxA: false, auxB: false
                       };
-                      
-                      if (logo.type === 'label') {
-                        // Only one minimum distance for labels
-                        if (distArr.length > 0) visibleLines[distArr[0].key as keyof typeof visibleLines] = true;
-                      } else {
-                        // Two minimum distances for logos
-                        if (distArr.length > 0) visibleLines[distArr[0].key as keyof typeof visibleLines] = true;
-                        if (distArr.length > 1) visibleLines[distArr[1].key as keyof typeof visibleLines] = true;
-                      }
+                      if (verticalCandidates.length > 0) visibleLines[verticalCandidates[0].key] = true;
+                      if (horizontalCandidates.length > 0) visibleLines[horizontalCandidates[0].key] = true;
                     }
                     setLogoStates(prev => prev.map(s => s.id === logo.id ? { ...newAttrs, visibleLines } : s));
                   }}
@@ -967,6 +1024,22 @@ const SingleMockupCanvas = React.forwardRef<any, SingleMockupCanvasProps>(({ gar
               <Ruler size={18} />
               {showRulers ? '隐藏尺寸标注' : '一键标注尺寸'}
             </button>
+            {(() => {
+              const allVisible = logoStates.length > 0 && logoStates.every(s => s.visible);
+              return (
+                <button
+                  onClick={() => {
+                    const newVisible = !allVisible;
+                    setLogoStates(prev => prev.map(s => ({ ...s, visible: newVisible })));
+                  }}
+                  disabled={logoStates.length === 0}
+                  className={`w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 ${allVisible ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  {allVisible ? <Eye size={18} /> : <EyeOff size={18} />}
+                  {allVisible ? '隐藏全部图层' : '显示全部图层'}
+                </button>
+              );
+            })()}
           </div>
 
           {/* 2. Layer Controls */}
@@ -1334,6 +1407,80 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garments, logos, lan
   const refs = useRef<Record<string, any>>({});
   const [isExporting, setIsExporting] = useState(false);
 
+  // Per-garment watermark state lifted to parent for cascade synchronization.
+  // Edits to G[i] cascade to G[i..N-1]. Edits to G[j] do NOT affect G[k<j].
+  const [watermarks, setWatermarks] = useState<Record<string, WatermarkState>>(() => {
+    const obj: Record<string, WatermarkState> = {};
+    garments.forEach(g => { obj[g.id] = { ...DEFAULT_WATERMARK }; });
+    return obj;
+  });
+  const [anchorPointsByGarment, setAnchorPointsByGarment] = useState<Record<string, AnchorPointsState>>(() => {
+    const obj: Record<string, AnchorPointsState> = {};
+    garments.forEach(g => { obj[g.id] = { ...DEFAULT_ANCHORS }; });
+    return obj;
+  });
+
+  // Initialize new garments and prune removed ones; new garments inherit from prior sibling
+  useEffect(() => {
+    setWatermarks(prev => {
+      const next: Record<string, WatermarkState> = {};
+      garments.forEach((g, idx) => {
+        if (prev[g.id]) {
+          next[g.id] = prev[g.id];
+        } else {
+          // Inherit from previous sibling (cascade default), or DEFAULT_WATERMARK if first
+          const prior = idx > 0 ? prev[garments[idx - 1].id] : null;
+          next[g.id] = prior ? { ...prior } : { ...DEFAULT_WATERMARK };
+        }
+      });
+      return next;
+    });
+    setAnchorPointsByGarment(prev => {
+      const next: Record<string, AnchorPointsState> = {};
+      garments.forEach((g, idx) => {
+        if (prev[g.id]) {
+          next[g.id] = prev[g.id];
+        } else {
+          const prior = idx > 0 ? prev[garments[idx - 1].id] : null;
+          next[g.id] = prior ? { ...prior } : { ...DEFAULT_ANCHORS };
+        }
+      });
+      return next;
+    });
+  }, [garments]);
+
+  // Reset activeGarmentId if it no longer matches any garment
+  useEffect(() => {
+    if (!garments.find(g => g.id === activeGarmentId)) {
+      setActiveGarmentId(garments[0]?.id);
+    }
+  }, [garments, activeGarmentId]);
+
+  const handleWatermarkChange = (garmentId: string, newWatermark: WatermarkState) => {
+    const idx = garments.findIndex(g => g.id === garmentId);
+    if (idx === -1) return;
+    setWatermarks(prev => {
+      const next = { ...prev };
+      // Cascade downstream: idx, idx+1, ..., N-1
+      for (let i = idx; i < garments.length; i++) {
+        next[garments[i].id] = newWatermark;
+      }
+      return next;
+    });
+  };
+
+  const handleAnchorChange = (garmentId: string, newAnchors: AnchorPointsState) => {
+    const idx = garments.findIndex(g => g.id === garmentId);
+    if (idx === -1) return;
+    setAnchorPointsByGarment(prev => {
+      const next = { ...prev };
+      for (let i = idx; i < garments.length; i++) {
+        next[garments[i].id] = newAnchors;
+      }
+      return next;
+    });
+  };
+
   const handleExportAll = async () => {
     setIsExporting(true);
     const results = [];
@@ -1389,6 +1536,10 @@ export const MockupCanvas: React.FC<MockupCanvasProps> = ({ garments, logos, lan
               lang={lang} 
               ref={(el) => refs.current[g.id] = el}
               onExportSingle={handleExportAll}
+              watermark={watermarks[g.id] || DEFAULT_WATERMARK}
+              onWatermarkChange={(wm) => handleWatermarkChange(g.id, wm)}
+              anchorPoints={anchorPointsByGarment[g.id] || DEFAULT_ANCHORS}
+              onAnchorPointsChange={(ap) => handleAnchorChange(g.id, ap)}
             />
           </div>
         ))}

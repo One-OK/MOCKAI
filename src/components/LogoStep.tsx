@@ -663,7 +663,23 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.rotation}</p>
-                      <span className="text-[10px] font-bold text-slate-900">{tempRotation}°</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          value={tempRotation}
+                          onChange={(e) => {
+                            let val = parseInt(e.target.value);
+                            if (isNaN(val)) val = 0;
+                            val = Math.max(0, Math.min(360, val));
+                            setTempRotation(val);
+                            setRotation(val);
+                          }}
+                          className="w-14 px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[11px] font-bold text-slate-900 focus:ring-1 focus:ring-slate-900 outline-none text-right"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400">°</span>
+                      </div>
                     </div>
                     <input 
                       type="range" 
@@ -675,6 +691,18 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }
                       onTouchEnd={() => setRotation(tempRotation)}
                       className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-900"
                     />
+                    <div className="grid grid-cols-6 gap-1 pt-1">
+                      {[0, 45, 90, 180, 270, 315].map(deg => (
+                        <button
+                          key={deg}
+                          onClick={() => { setTempRotation(deg); setRotation(deg); }}
+                          className={`py-1 text-[10px] font-bold rounded border transition-colors ${tempRotation === deg ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                          title={`旋转 ${deg}°`}
+                        >
+                          {deg}°
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Auto Trim */}
@@ -711,7 +739,22 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">文字大小</p>
-                      <span className="text-[10px] font-bold text-slate-900">{activeLogo.labelProps?.fontSize || 40}px</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="8"
+                          max="400"
+                          value={activeLogo.labelProps?.fontSize || 40}
+                          onChange={(e) => {
+                            let val = parseInt(e.target.value);
+                            if (isNaN(val)) val = 40;
+                            val = Math.max(8, Math.min(400, val));
+                            updateLabelProps({ fontSize: val });
+                          }}
+                          className="w-14 px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[11px] font-bold text-slate-900 focus:ring-1 focus:ring-slate-900 outline-none text-right"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400">px</span>
+                      </div>
                     </div>
                     <input 
                       type="range" 
@@ -772,18 +815,49 @@ export const LogoStep: React.FC<LogoStepProps> = ({ onComplete, garments, lang }
                     </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">旋转方向 (度)</label>
-                    <select
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">旋转方向</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          value={activeLogo.labelProps?.rotation || 0}
+                          onChange={(e) => {
+                            let val = parseInt(e.target.value);
+                            if (isNaN(val)) val = 0;
+                            val = Math.max(0, Math.min(360, val));
+                            updateLabelProps({ rotation: val });
+                          }}
+                          className="w-14 px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[11px] font-bold text-slate-900 focus:ring-1 focus:ring-slate-900 outline-none text-right"
+                        />
+                        <span className="text-[10px] font-bold text-slate-400">°</span>
+                      </div>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="360"
                       value={activeLogo.labelProps?.rotation || 0}
-                      onChange={(e) => updateLabelProps({ rotation: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 outline-none"
-                    >
-                      <option value="0">0° (水平)</option>
-                      <option value="90">90° (垂直)</option>
-                      <option value="180">180° (倒置)</option>
-                      <option value="270">270°</option>
-                    </select>
+                      onChange={(e) => updateLabelProps({ rotation: parseInt(e.target.value) })}
+                      className="w-full h-1 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-slate-900"
+                    />
+                    <div className="grid grid-cols-4 gap-1 pt-1">
+                      {[0, 90, 180, 270].map(deg => {
+                        const current = activeLogo.labelProps?.rotation || 0;
+                        return (
+                          <button
+                            key={deg}
+                            onClick={() => updateLabelProps({ rotation: deg })}
+                            className={`py-1 text-[10px] font-bold rounded border transition-colors ${current === deg ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                            title={deg === 0 ? '水平' : deg === 90 ? '垂直' : deg === 180 ? '倒置' : '反向垂直'}
+                          >
+                            {deg}°
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <div className="space-y-1">
