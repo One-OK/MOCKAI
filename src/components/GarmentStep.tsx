@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Image as ImageIcon, Maximize2, Target, ChevronRight, RefreshCw, Eraser, Layers, Ruler, Info, MousePointer2, Check, Scissors } from 'lucide-react';
+import { Upload, Image as ImageIcon, Maximize2, Target, ChevronRight, RefreshCw, Eraser, Layers, Ruler, Info, MousePointer2, Check, Scissors, X } from 'lucide-react';
 import { Stage, Layer, Image as KonvaImage, Transformer, Circle, Line as KonvaLine, Rect } from 'react-konva';
 import useImage from 'use-image';
 import { GoogleGenAI } from "@google/genai";
@@ -195,24 +195,118 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
         const normWidth = Math.abs(labelRect.width);
         const normHeight = Math.abs(labelRect.height);
 
-        const rectX = (normX - garmentPos.x) * scaleX;
-        const rectY = (normY - garmentPos.y) * scaleY;
-        const rectWidth = normWidth * scaleX;
-        const rectHeight = normHeight * scaleY;
-        
+        const rectX = Math.max(0, Math.round((normX - garmentPos.x) * scaleX));
+        const rectY = Math.max(0, Math.round((normY - garmentPos.y) * scaleY));
+        const rectWidth = Math.min(canvas.width - rectX, Math.round(normWidth * scaleX));
+        const rectHeight = Math.min(canvas.height - rectY, Math.round(normHeight * scaleY));
+
+        if (rectWidth <= 2 || rectHeight <= 2) {
+          setIsProcessing(false);
+          setIsSelectingLabel(false);
+          setLabelRect(null);
+          return;
+        }
+
+        // === Step 1: Multi-direction sampling ===
+        // Sample exterior bands on 4 sides (top, bottom, left, right) outside the rect
+        const sampleBand = Math.max(6, Math.min(40, Math.round(Math.min(rectWidth, rectHeight) * 0.25)));
+        const sampleRegions = [
+          { sx: rectX, sy: Math.max(0, rectY - sampleBand), sw: rectWidth, sh: Math.min(sampleBand, rectY) },
+          { sx: rectX, sy: rectY + rectHeight, sw: rectWidth, sh: Math.min(sampleBand, canvas.height - (rectY + rectHeight)) },
+          { sx: Math.max(0, rectX - sampleBand), sy: rectY, sw: Math.min(sampleBand, rectX), sh: rectHeight },
+          { sx: rectX + rectWidth, sy: rectY, sw: Math.min(sampleBand, canvas.width - (rectX + rectWidth)), sh: rectHeight },
+        ].filter(r => r.sw > 0 && r.sh > 0);
+
+        let sumR = 0, sumG = 0, sumB = 0, sumA = 0, count = 0;
+        for (const sr of sampleRegions) {
+          const id = ctx.getImageData(sr.sx, sr.sy, sr.sw, sr.sh);
+          for (let i = 0; i < id.data.length; i += 4) {
+            if (id.data[i + 3] > 10) { // skip transparent
+              sumR += id.data[i];
+              sumG += id.data[i + 1];
+              sumB += id.data[i + 2];
+              sumA += id.data[i + 3];
+              count++;
+            }
+          }
+        }
+
+        if (count === 0) {
+          setIsProcessing(false);
+          setIsSelectingLabel(false);
+          setLabelRect(null);
+          return;
+        }
+
+        const avgR = Math.round(sumR / count);
+        const avgG = Math.round(sumG / count);
+        const avgB = Math.round(sumB / count);
+        const avgA = sumA / count;
+
+        // === Step 2: Fill rect with averaged color ===
         ctx.save();
-        ctx.beginPath();
-        ctx.rect(rectX, rectY, rectWidth, rectHeight);
-        ctx.clip();
-        
-        // Copy a patch from just below the label to preserve fabric texture
-        const patchY = Math.min(img.height - rectHeight, rectY + rectHeight + 10);
-        ctx.drawImage(img, rectX, patchY, rectWidth, rectHeight, rectX, rectY, rectWidth, rectHeight);
-        
-        // Apply a blur to blend the patch with the surroundings
-        ctx.filter = 'blur(8px)';
-        ctx.drawImage(canvas, rectX, rectY, rectWidth, rectHeight, rectX, rectY, rectWidth, rectHeight);
+        ctx.fillStyle = `rgba(${avgR}, ${avgG}, ${avgB}, ${avgA / 255})`;
+        ctx.fillRect(rectX, rectY, rectWidth, rectHeight);
         ctx.restore();
+
+        // === Step 3: Build a blurred patch with feather alpha mask for soft edges ===
+        const padding = sampleBand;
+        const patchX = Math.max(0, rectX - padding);
+        const patchY = Math.max(0, rectY - padding);
+        const patchW = Math.min(canvas.width - patchX, rectWidth + padding * 2);
+        const patchH = Math.min(canvas.height - patchY, rectHeight + padding * 2);
+
+        const blurCanvas = document.createElement('canvas');
+        blurCanvas.width = patchW;
+        blurCanvas.height = patchH;
+        const blurCtx = blurCanvas.getContext('2d');
+        if (blurCtx) {
+          // Blur the region (the rect is already filled with avg color, so blur softens its boundary against surroundings)
+          blurCtx.filter = 'blur(8px)';
+          blurCtx.drawImage(canvas, patchX, patchY, patchW, patchH, 0, 0, patchW, patchH);
+          blurCtx.filter = 'none';
+
+          // Apply feather alpha mask: fully opaque inside rect interior, fading to 0 outside
+          const feather = Math.max(4, Math.min(20, Math.round(Math.min(rectWidth, rectHeight) * 0.15)));
+          const innerLeft = (rectX - patchX) + feather;
+          const innerRight = (rectX - patchX) + rectWidth - feather;
+          const innerTop = (rectY - patchY) + feather;
+          const innerBottom = (rectY - patchY) + rectHeight - feather;
+          const outerLeft = (rectX - patchX) - feather;
+          const outerRight = (rectX - patchX) + rectWidth + feather;
+          const outerTop = (rectY - patchY) - feather;
+          const outerBottom = (rectY - patchY) + rectHeight + feather;
+
+          const featherData = blurCtx.getImageData(0, 0, patchW, patchH);
+          const fd = featherData.data;
+          for (let y = 0; y < patchH; y++) {
+            let alphaY = 1;
+            if (y < innerTop) {
+              const denom = innerTop - outerTop;
+              alphaY = denom > 0 ? Math.max(0, Math.min(1, (y - outerTop) / denom)) : 0;
+            } else if (y > innerBottom) {
+              const denom = outerBottom - innerBottom;
+              alphaY = denom > 0 ? Math.max(0, Math.min(1, (outerBottom - y) / denom)) : 0;
+            }
+            for (let x = 0; x < patchW; x++) {
+              let alphaX = 1;
+              if (x < innerLeft) {
+                const denom = innerLeft - outerLeft;
+                alphaX = denom > 0 ? Math.max(0, Math.min(1, (x - outerLeft) / denom)) : 0;
+              } else if (x > innerRight) {
+                const denom = outerRight - innerRight;
+                alphaX = denom > 0 ? Math.max(0, Math.min(1, (outerRight - x) / denom)) : 0;
+              }
+              const alpha = Math.min(alphaX, alphaY);
+              const idx = (y * patchW + x) * 4;
+              fd[idx + 3] = Math.round(fd[idx + 3] * alpha);
+            }
+          }
+          blurCtx.putImageData(featherData, 0, 0);
+
+          // Composite the feathered blurred patch onto the main canvas
+          ctx.drawImage(blurCanvas, patchX, patchY);
+        }
         
         setGarmentUrl(canvas.toDataURL('image/png'));
         setIsProcessing(false);
@@ -456,6 +550,31 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
       }
       if (g.measurements) {
         setMeasurements(g.measurements);
+      }
+    }
+  };
+
+  const deleteGarment = (id: string) => {
+    const remaining = garments.filter(g => g.id !== id);
+    setGarments(remaining);
+    if (activeGarmentId === id) {
+      if (remaining.length > 0) {
+        const first = remaining[0];
+        setActiveGarmentId(first.id);
+        setGarmentUrl(first.url);
+        setBackgroundColor(first.backgroundColor || '#f8fafc');
+        if ((first as any)._internal) {
+          setGarmentPos((first as any)._internal.garmentPos);
+          setPoints((first as any)._internal.points);
+        }
+        if (first.measurements) {
+          setMeasurements(first.measurements);
+        }
+      } else {
+        setActiveGarmentId(null);
+        setGarmentUrl(null);
+        setPoints([]);
+        setBackgroundColor('#f8fafc');
       }
     }
   };
@@ -788,16 +907,28 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
           {garments.length > 0 && (
             <div className="flex items-center gap-2 overflow-x-auto pb-2">
               {garments.map((g, idx) => (
-                <button
+                <div
                   key={g.id}
+                  className={`group relative flex-shrink-0 w-20 h-20 rounded-xl border-2 overflow-hidden transition-all cursor-pointer ${activeGarmentId === g.id ? 'border-slate-900 shadow-md' : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'}`}
                   onClick={() => loadGarment(g.id)}
-                  className={`relative flex-shrink-0 w-20 h-20 rounded-xl border-2 overflow-hidden transition-all ${activeGarmentId === g.id ? 'border-slate-900 shadow-md' : 'border-slate-200 hover:border-slate-300 opacity-70 hover:opacity-100'}`}
                 >
-                  <img src={g.url} alt={g.name} className="w-full h-full object-contain bg-white" />
-                  <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] py-0.5 text-center truncate px-1 backdrop-blur-sm">
+                  <img src={g.url} alt={g.name} className="w-full h-full object-contain bg-white pointer-events-none" />
+                  <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] py-0.5 text-center truncate px-1 backdrop-blur-sm pointer-events-none">
                     {g.name}
                   </div>
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`删除画面"${g.name}"？此操作不可撤销。`)) {
+                        deleteGarment(g.id);
+                      }
+                    }}
+                    className="absolute top-1 right-1 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md z-10"
+                    title="删除画面"
+                  >
+                    <X size={12} strokeWidth={3} />
+                  </button>
+                </div>
               ))}
               <label className="flex-shrink-0 w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 hover:bg-slate-50 flex flex-col items-center justify-center cursor-pointer transition-colors text-slate-400 hover:text-slate-600">
                 <Upload size={20} className="mb-1" />
