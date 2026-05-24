@@ -129,30 +129,30 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
     let defaultPoints: RelativePoint[] = [];
     if (measurementSettings.method === 'tshirt') {
       defaultPoints = [
-        { id: 'len_top', label: t.length + ' (Top)', relX: 0.6, relY: 0.15 }, // 右侧领口肩缝
-        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.6, relY: 0.9 }, // 底部下摆
-        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.2 }, // 左肩袖缝
-        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.2 }, // 右肩袖缝
-        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.45 }, // 左腋下侧缝
-        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.45 }, // 右腋下侧缝
+        { id: 'len_top', label: t.length + ' (Top)', relX: 0.6, relY: 0.15 },
+        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.6, relY: 0.9 },
+        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.2 },
+        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.2 },
+        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.45 },
+        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.45 },
       ];
     } else if (measurementSettings.method === 'hoodie') {
       defaultPoints = [
-        { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.25 }, // 帽根
-        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 }, // 底部下摆
-        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.3 }, // 左肩袖缝
-        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.3 }, // 右肩袖缝
-        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.5 }, // 左腋下侧缝
-        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.5 }, // 右腋下侧缝
+        { id: 'len_top', label: t.length + ' (Top)', relX: 0.5, relY: 0.25 },
+        { id: 'len_bottom', label: t.length + ' (Bottom)', relX: 0.5, relY: 0.9 },
+        { id: 'sh_left', label: t.shoulder + ' (Left)', relX: 0.25, relY: 0.3 },
+        { id: 'sh_right', label: t.shoulder + ' (Right)', relX: 0.75, relY: 0.3 },
+        { id: 'ch_left', label: t.chest + ' (Left)', relX: 0.2, relY: 0.5 },
+        { id: 'ch_right', label: t.chest + ' (Right)', relX: 0.8, relY: 0.5 },
       ];
     } else if (measurementSettings.method === 'pants') {
       defaultPoints = [
-        { id: 'len_top', label: '裤长 (Top)', relX: 0.5, relY: 0.1 }, // 腰头
-        { id: 'len_bottom', label: '裤长 (Bottom)', relX: 0.5, relY: 0.95 }, // 裤脚
-        { id: 'sh_left', label: '腰围 (Left)', relX: 0.35, relY: 0.1 }, // 左腰头
-        { id: 'sh_right', label: '腰围 (Right)', relX: 0.65, relY: 0.1 }, // 右腰头
-        { id: 'ch_left', label: '臀围 (Left)', relX: 0.3, relY: 0.3 }, // 左臀围
-        { id: 'ch_right', label: '臀围 (Right)', relX: 0.7, relY: 0.3 }, // 右臀围
+        { id: 'len_top', label: '裤长 (Top)', relX: 0.5, relY: 0.1 },
+        { id: 'len_bottom', label: '裤长 (Bottom)', relX: 0.5, relY: 0.95 },
+        { id: 'sh_left', label: '腰围 (Left)', relX: 0.35, relY: 0.1 },
+        { id: 'sh_right', label: '腰围 (Right)', relX: 0.65, relY: 0.1 },
+        { id: 'ch_left', label: '臀围 (Left)', relX: 0.3, relY: 0.3 },
+        { id: 'ch_right', label: '臀围 (Right)', relX: 0.7, relY: 0.3 },
       ];
     } else {
       defaultPoints = [
@@ -618,7 +618,7 @@ export const GarmentStep: React.FC<GarmentStepProps> = ({ onComplete, lang, meas
           const newName = garments.length === 0 && index === 0 ? '前幅' : `画面 ${garments.length + index + 1}`;
           
           let defaultPoints: RelativePoint[];
-          let startingMeasurements = { length: 70, shoulder: 45, chest: 52, sleeve: 60 };
+          let startingMeasurements: { [key: string]: number } = { length: 70, shoulder: 45, chest: 52, sleeve: 60 };
 
           if (garmentUrl || garments.length > 0) {
             defaultPoints = JSON.parse(JSON.stringify(points));
